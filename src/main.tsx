@@ -23,9 +23,24 @@ function App() {
   const [sort, setSort] = useState('relevance')
   const [searched, setSearched] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => JSON.parse(localStorage.getItem('gargi-recent-searches') || '[]'))
 
   const configured = Boolean(config.key && config.cx)
   const resultLabel = useMemo(() => items.length ? `${items.length} PDF${items.length === 1 ? '' : 's'} found` : '', [items])
+  const suggestions = useMemo(() => {
+    const curated = ['machine learning', 'ancient history', 'design systems', 'personal finance', 'world literature', 'computer science', 'philosophy', 'Naval Ravikant', 'public domain books', 'research methodology', 'data structures and algorithms', 'psychology textbooks']
+    const needle = normalizeForMatch(query)
+    if (!needle) return recentSearches.slice(0, 6)
+    return [...recentSearches, ...items.map(item => item.title), ...curated]
+      .filter((value, index, all) => value && normalizeForMatch(value) !== needle && all.findIndex(other => normalizeForMatch(other) === normalizeForMatch(value)) === index)
+      .map(value => ({ value, score: suggestionScore(value, needle) }))
+      .filter(entry => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map(entry => entry.value)
+  }, [query, items, recentSearches])
 
   useEffect(() => { if (params.get('q')) void runSearch(params.get('q')!) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -37,8 +52,12 @@ function App() {
 
   async function runSearch(term: string) {
     if (!term.trim()) return
+    const cleanTerm = term.trim()
+    const updatedRecent = [cleanTerm, ...recentSearches.filter(value => normalizeForMatch(value) !== normalizeForMatch(cleanTerm))].slice(0, 8)
+    setRecentSearches(updatedRecent); localStorage.setItem('gargi-recent-searches', JSON.stringify(updatedRecent))
+    setSearchFocused(false); setActiveSuggestion(-1)
     setLoading(true); setError(''); setItems([]); setSearched(true)
-    history.replaceState(null, '', `?q=${encodeURIComponent(term.trim())}`)
+    history.replaceState(null, '', `?q=${encodeURIComponent(cleanTerm)}`)
     try {
       const searches = [searchOpenAlex(term), searchInternetArchive(term)]
       if (configured) searches.unshift(searchGoogle(term))
@@ -147,6 +166,16 @@ function App() {
       .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
   }
 
+  function suggestionScore(value: string, normalizedNeedle: string) {
+    const candidate = normalizeForMatch(value)
+    if (candidate.startsWith(normalizedNeedle)) return 1_000 - candidate.length
+    if (candidate.includes(normalizedNeedle)) return 700 - candidate.indexOf(normalizedNeedle)
+    const needleTokens = normalizedNeedle.split(' ').filter(Boolean)
+    const candidateTokens = candidate.split(' ')
+    const prefixMatches = needleTokens.filter(token => candidateTokens.some(candidateToken => candidateToken.startsWith(token))).length
+    return prefixMatches ? prefixMatches / needleTokens.length * 500 : 0
+  }
+
   async function inspectPdf(item: SearchItem, index: number) {
     if (!item.link.toLowerCase().includes('.pdf')) return
     try {
@@ -159,6 +188,14 @@ function App() {
   }
 
   function submit(e: FormEvent) { e.preventDefault(); void runSearch(query) }
+  function chooseSuggestion(value: string) { setQuery(value); void runSearch(value) }
+  function handleSearchKey(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!suggestions.length) return
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActiveSuggestion(index => (index + 1) % suggestions.length) }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setActiveSuggestion(index => index <= 0 ? suggestions.length - 1 : index - 1) }
+    else if (event.key === 'Enter' && activeSuggestion >= 0) { event.preventDefault(); chooseSuggestion(suggestions[activeSuggestion]) }
+    else if (event.key === 'Escape') { setSearchFocused(false); setActiveSuggestion(-1) }
+  }
   function saveConfig(e: FormEvent) { e.preventDefault(); localStorage.setItem('gargi-config', JSON.stringify(config)); setShowSettings(false) }
   async function installApp() { if (!installPrompt) return; await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }
   const googleDorkUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query || 'PDF books'} filetype:pdf${site ? ` site:${site}` : ''}`)}`
@@ -171,9 +208,14 @@ function App() {
         <div className="eyebrow"><Sparkles size={14}/> A quieter way to search</div>
         <h1>Find knowledge,<br/><em>one PDF at a time.</em></h1>
         <p>Research papers, books, reports and manuals—without the noise.</p>
-        <form className="search-box" onSubmit={submit}>
-          <Search size={22}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search for a topic, title, or author…" aria-label="Search PDFs" autoFocus/><button>Search PDFs</button>
-        </form>
+        <div className="search-area">
+          <form className="search-box" onSubmit={submit}>
+            <Search size={22}/><input value={query} onChange={e => {setQuery(e.target.value);setActiveSuggestion(-1)}} onFocus={() => setSearchFocused(true)} onBlur={() => setTimeout(() => setSearchFocused(false), 120)} onKeyDown={handleSearchKey} placeholder="Search for a topic, title, or author…" aria-label="Search PDFs" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded={searchFocused && suggestions.length > 0} aria-activedescendant={activeSuggestion >= 0 ? `suggestion-${activeSuggestion}` : undefined} autoFocus/><button>Search PDFs</button>
+          </form>
+          {searchFocused && suggestions.length > 0 && <div className="suggestions" id="search-suggestions" role="listbox" aria-label="Search recommendations">
+            {suggestions.map((suggestion, index) => <button type="button" role="option" aria-selected={index === activeSuggestion} id={`suggestion-${index}`} className={index === activeSuggestion ? 'active' : ''} key={suggestion} onMouseDown={event => event.preventDefault()} onClick={() => chooseSuggestion(suggestion)}><Search size={15}/><span>{suggestion}</span>{recentSearches.includes(suggestion) && <small>Recent</small>}</button>)}
+          </div>}
+        </div>
         <div className="tips"><span>Try:</span>{['machine learning', 'ancient history', 'design systems'].map(x => <button key={x} onClick={() => {setQuery(x); void runSearch(x)}}>{x}</button>)}</div>
         <div className="dork-links">
           <a className="dork-link" href={googleDorkUrl} target="_blank" rel="noopener noreferrer">Google PDF dork <ExternalLink size={13}/></a>
