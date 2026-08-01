@@ -18,6 +18,7 @@ GargiLibrary is a focused, privacy-conscious PDF discovery engine for research p
 - First-page thumbnail and page-count extraction with PDF.js
 - Search URLs that can be bookmarked and shared
 - Responsive, accessible interface with a zero-backend deployment
+- Installable Progressive Web App with standalone mode and offline app-shell support
 - SEO essentials: metadata, Open Graph, structured data, canonical URL, sitemap, and robots.txt
 - No embedded API secrets; credentials stay in the user's browser local storage
 
