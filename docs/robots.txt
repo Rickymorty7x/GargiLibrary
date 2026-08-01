@@ -1,3 +1,8 @@
 User-agent: *
 Allow: /
+
+User-agent: Googlebot-Image
+Allow: /GargiLibrary/favicon.svg
+Allow: /GargiLibrary/og-image.svg
+
 Sitemap: https://rickymorty7x.github.io/GargiLibrary/sitemap.xml

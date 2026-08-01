@@ -122,7 +122,7 @@ function App() {
   const awsDorkUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query || 'PDF books'} filetype:pdf (site:amazonaws.com OR site:s3.amazonaws.com)` )}`
 
   return <div className="page-shell">
-    <header><a className="brand" href="./"><span className="brand-mark"><BookOpen size={23}/></span><span>Gargi<span>Library</span></span></a><nav><a href="./about.html">About</a><a href="https://github.com/Rickymorty7x/GargiLibrary" target="_blank">GitHub</a>{installPrompt && <button className="install-btn" onClick={installApp}>Install app</button>}<button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Search API settings"><Settings size={20}/></button></nav></header>
+    <header><a className="brand" href="./"><span className="brand-mark"><img src="./favicon.svg" alt="" width="39" height="39"/></span><span>Gargi<span>Library</span></span></a><nav><a href="./about.html">About</a><a href="https://github.com/Rickymorty7x/GargiLibrary" target="_blank">GitHub</a>{installPrompt && <button className="install-btn" onClick={installApp}>Install app</button>}<button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Search API settings"><Settings size={20}/></button></nav></header>
     <main>
       <section className={`hero ${items.length || loading ? 'compact' : ''}`}>
         <div className="eyebrow"><Sparkles size={14}/> A quieter way to search</div>
