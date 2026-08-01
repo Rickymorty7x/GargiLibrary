@@ -46,8 +46,9 @@ function App() {
       const found = batches.flatMap(x => x.status === 'fulfilled' ? x.value : [])
         .filter((x, i, all) => all.findIndex(y => y.link === x.link) === i)
       if (!found.length && batches.every(x => x.status === 'rejected')) throw new Error('Search providers are temporarily unavailable. Try again shortly.')
-      setItems(found)
-      found.slice(0, 10).forEach((item, index) => void inspectPdf(item, index))
+      const ranked = rankResults(found, term)
+      setItems(ranked)
+      ranked.slice(0, 10).forEach((item, index) => void inspectPdf(item, index))
     } catch (e) { setError(e instanceof Error ? e.message : 'Something went wrong') }
     finally { setLoading(false) }
   }
@@ -78,7 +79,7 @@ function App() {
   async function searchInternetArchive(term: string): Promise<SearchItem[]> {
     const escaped = term.replace(/["\\]/g, ' ').trim()
     const url = new URL('https://archive.org/advancedsearch.php')
-    url.search = new URLSearchParams({ q: `(title:("${escaped}") OR description:("${escaped}")) AND mediatype:texts AND format:"PDF"`, 'fl[]': ['identifier','title','description','date','creator'] as any, rows: '12', page: '1', output: 'json', sort: sort === 'date' ? 'date desc' : 'downloads desc' }).toString()
+    url.search = new URLSearchParams({ q: `(title:("${escaped}")^10 OR title:(${escaped})^5 OR description:("${escaped}")^2 OR subject:(${escaped})) AND mediatype:texts AND format:"PDF"`, 'fl[]': ['identifier','title','description','date','creator'] as any, rows: '25', page: '1', output: 'json', sort: sort === 'date' ? 'date desc' : 'downloads desc' }).toString()
     // URLSearchParams does not preserve repeated fields when created from an object.
     url.searchParams.delete('fl[]'); ['identifier','title','description','date','creator'].forEach(x => url.searchParams.append('fl[]', x))
     const response = await fetch(url); if (!response.ok) throw new Error('Internet Archive failed')
@@ -103,6 +104,48 @@ function App() {
     return Object.entries(index).flatMap(([word, positions]) => positions.map(position => ({ word, position }))).sort((a,b) => a.position-b.position).map(x => x.word).join(' ').slice(0, 310)
   }
   function formatBytes(bytes: number) { return bytes > 1e6 ? `${(bytes/1e6).toFixed(1)} MB` : `${Math.round(bytes/1e3)} KB` }
+
+  function rankResults(results: SearchItem[], term: string) {
+    if (sort === 'date') return [...results].sort((a, b) => Number(b.date || 0) - Number(a.date || 0))
+    return results.map((item, index) => ({ item, index, score: titleMatchScore(item.title, term) }))
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map(entry => entry.item)
+  }
+
+  function titleMatchScore(title: string, term: string) {
+    const normalizedTitle = normalizeForMatch(title)
+    const normalizedTerm = normalizeForMatch(term)
+    if (!normalizedTerm) return 0
+    if (normalizedTitle === normalizedTerm) return 10_000
+
+    const stopWords = new Set(['a','an','and','by','for','from','in','of','on','the','to','with'])
+    const queryTokens = [...new Set(normalizedTerm.split(' ').filter(token => token && !stopWords.has(token)))]
+    const titleTokens = normalizedTitle.split(' ').filter(Boolean)
+    const titleSet = new Set(titleTokens)
+    const matchedTokens = queryTokens.filter(token => titleSet.has(token)).length
+    const coverage = queryTokens.length ? matchedTokens / queryTokens.length : 0
+    const union = new Set([...queryTokens, ...titleTokens]).size
+    const jaccard = union ? matchedTokens / union : 0
+    const orderedMatches = queryTokens.reduce((state, token) => {
+      const position = titleTokens.indexOf(token, state.last + 1)
+      return position >= 0 ? { count: state.count + 1, last: position } : state
+    }, { count: 0, last: -1 }).count
+    const orderRatio = queryTokens.length ? orderedMatches / queryTokens.length : 0
+    const lengthRatio = Math.min(normalizedTitle.length, normalizedTerm.length) / Math.max(normalizedTitle.length, normalizedTerm.length)
+
+    let score = coverage * 1_000 + jaccard * 450 + orderRatio * 250 + lengthRatio * 120
+    if (normalizedTitle.startsWith(normalizedTerm)) score += 1_500
+    else if (normalizedTitle.includes(normalizedTerm)) score += 1_200
+    if (coverage === 1) score += 700
+    if (matchedTokens === 0) score -= 1_000
+    return score
+  }
+
+  function normalizeForMatch(value: string) {
+    return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/\b(pdf|ebook|e-book|full text|download)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
+  }
 
   async function inspectPdf(item: SearchItem, index: number) {
     if (!item.link.toLowerCase().includes('.pdf')) return
@@ -139,8 +182,8 @@ function App() {
       </section>
 
       {(items.length > 0 || loading || error) && <section className="results-wrap">
-        <aside><h3><Filter size={17}/> Refine</h3><label>Website domain<input placeholder="e.g. arxiv.org" value={site} onChange={e => setSite(e.target.value)}/></label><label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="relevance">Relevance</option><option value="date">Newest first</option></select></label><div className="source-note"><Library size={18}/><div><strong>PDF-first results</strong><small>Only document results are requested from the search provider.</small></div></div></aside>
-        <div className="results"><div className="results-head"><div><span>{resultLabel}</span>{!configured && items.length > 0 && <small>Open-index results</small>}</div></div>
+        <aside><h3><Filter size={17}/> Refine</h3><label>Website domain<input placeholder="e.g. arxiv.org" value={site} onChange={e => setSite(e.target.value)}/></label><label>Sort by<select value={sort} onChange={e => setSort(e.target.value)}><option value="relevance">Best title match</option><option value="date">Newest first</option></select></label><div className="source-note"><Library size={18}/><div><strong>PDF-first results</strong><small>Only document results are requested from the search provider.</small></div></div></aside>
+        <div className="results"><div className="results-head"><div><span>{resultLabel}</span>{items.length > 0 && <small>{sort === 'date' ? 'Newest first' : 'Best title match first'}</small>}</div></div>
           {loading && <div className="state"><LoaderCircle className="spin"/> Searching the stacks…</div>}
           {error && <div className="state error">{error}</div>}
           {!loading && searched && !error && !items.length && <div className="state">No open PDFs found. Try a broader phrase or the Google PDF dork.</div>}
