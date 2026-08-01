@@ -9,6 +9,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
 type SearchItem = { title: string; link: string; displayLink: string; snippet: string; thumbnail?: string; pages?: number; date?: string; size?: string; source?: string }
 type Config = { key: string; cx: string }
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> }
 
 function App() {
   const params = new URLSearchParams(location.search)
@@ -21,11 +22,18 @@ function App() {
   const [site, setSite] = useState('')
   const [sort, setSort] = useState('relevance')
   const [searched, setSearched] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
 
   const configured = Boolean(config.key && config.cx)
   const resultLabel = useMemo(() => items.length ? `${items.length} PDF${items.length === 1 ? '' : 's'} found` : '', [items])
 
   useEffect(() => { if (params.get('q')) void runSearch(params.get('q')!) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if ('serviceWorker' in navigator) void navigator.serviceWorker.register('./sw.js')
+    const captureInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent) }
+    window.addEventListener('beforeinstallprompt', captureInstall)
+    return () => window.removeEventListener('beforeinstallprompt', captureInstall)
+  }, [])
 
   async function runSearch(term: string) {
     if (!term.trim()) return
@@ -109,11 +117,12 @@ function App() {
 
   function submit(e: FormEvent) { e.preventDefault(); void runSearch(query) }
   function saveConfig(e: FormEvent) { e.preventDefault(); localStorage.setItem('gargi-config', JSON.stringify(config)); setShowSettings(false) }
+  async function installApp() { if (!installPrompt) return; await installPrompt.prompt(); await installPrompt.userChoice; setInstallPrompt(null) }
   const googleDorkUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query || 'PDF books'} filetype:pdf${site ? ` site:${site}` : ''}`)}`
   const awsDorkUrl = `https://www.google.com/search?q=${encodeURIComponent(`${query || 'PDF books'} filetype:pdf (site:amazonaws.com OR site:s3.amazonaws.com)` )}`
 
   return <div className="page-shell">
-    <header><a className="brand" href="./"><span className="brand-mark"><BookOpen size={23}/></span><span>Gargi<span>Library</span></span></a><nav><a href="#about">About</a><a href="https://github.com/Rickymorty7x/GargiLibrary" target="_blank">GitHub</a><button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Search API settings"><Settings size={20}/></button></nav></header>
+    <header><a className="brand" href="./"><span className="brand-mark"><BookOpen size={23}/></span><span>Gargi<span>Library</span></span></a><nav><a href="./about.html">About</a><a href="https://github.com/Rickymorty7x/GargiLibrary" target="_blank">GitHub</a>{installPrompt && <button className="install-btn" onClick={installApp}>Install app</button>}<button className="icon-btn" onClick={() => setShowSettings(true)} aria-label="Search API settings"><Settings size={20}/></button></nav></header>
     <main>
       <section className={`hero ${items.length || loading ? 'compact' : ''}`}>
         <div className="eyebrow"><Sparkles size={14}/> A quieter way to search</div>

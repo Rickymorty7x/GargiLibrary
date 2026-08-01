@@ -1,0 +1,39 @@
+{
+  "id": "./",
+  "name": "GargiLibrary — PDF Discovery",
+  "short_name": "GargiLibrary",
+  "description": "Find research papers, books, reports, manuals, and open PDFs without the noise.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#f5f0e7",
+  "theme_color": "#19352d",
+  "orientation": "any",
+  "categories": ["books", "education", "productivity", "utilities"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search PDFs",
+      "short_name": "Search",
+      "description": "Open GargiLibrary PDF search",
+      "url": "./",
+      "icons": [{"src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml"}]
+    },
+    {
+      "name": "Machine learning PDFs",
+      "short_name": "ML PDFs",
+      "url": "./?q=machine%20learning",
+      "icons": [{"src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml"}]
+    }
+  ]
+}
